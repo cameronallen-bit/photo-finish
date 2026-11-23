@@ -306,7 +306,7 @@ const role = query.has("host") ? "host" : query.has("screen") ? "screen" : "play
 const app = document.querySelector("#app");
 let db, state, players = {}, online = {}, uploads = {}, found = {}, myUploads = {}, myEntry, feed = {}, hidden = {};
 let subscription = [], liveSubscriptions = [], currentSubscription = "", draftUploads = new Map();
-let captionSelected = new Set(), captionSelectionTouched = false, hostTab = "show", uploadForm = "", editId = "";
+let captionSelected = new Set(), captionSelectionTouched = false, hostTab = "show", uploadForm = "", editId = "", shortRound = "";
 let clearAsk = false, busy = false, replyBusy = false, feedback = "", feedbackTimer, joinCollision = "";
 let confirmedIdentity = false, connectionLost = false, openingRoom = true, rendering = false, queuedRender = false;
 let photoLoading = new Map(), optionCache = new Map(), connectedRef;
@@ -807,9 +807,7 @@ async function startRound(kind, allowSmall=false) {
   if (guessGame(kind)) {
     const pool=guessPool(kind,present);
     if (pool.length===0) throw Error("No approved photos from players in this round.");
-    if (pool.length<4 && !allowSmall) {
-      if (!confirm("Only "+pool.length+" approved photos from eligible players. Start this short round?")) return;
-    }
+    if (pool.length<4 && !allowSmall) {shortRound=kind;return;}
     candidates=pool.map(record=>({id:record.owner,name:players[record.owner]?.name || "Photo owner"}));
     deck=shuffle(pool).slice(0,round.size).map(record=>record.id);
   } else if (kind==="caption") {
@@ -1324,7 +1322,8 @@ function showControls() {
     const currentCount=guessGame(kind)?guessPool(kind,Object.fromEntries(activePlayers().map(([id])=>[id,true]))).length:0;
     return '<div class="round-card row split" data-key="'+kind+'"><div><strong>'+h(GAMES[kind].name)+'</strong>'+
       (done?'<p><small>Round complete</small></p>':guessGame(kind)?'<p><small>'+currentCount+' approved from eligible players'+(currentCount<4?' · Fewer than four. Consider skipping.':'')+'</small></p>':"")+'</div>'+
-      (done?"":btn(kind==="hunt"?"Start hunt":"Start round","start","small mint",'data-kind="'+kind+'"'))+'</div>';
+      (done?"":shortRound===kind ? '<div class="row">'+btn("Start short round","start","small primary",'data-kind="'+kind+'" data-confirm-short')+
+        btn("Cancel","cancelShort","small quiet")+'</div>' : btn(kind==="hunt"?"Start hunt":"Start round","start","small mint",'data-kind="'+kind+'"'))+'</div>';
   }).join("");
   return '<section class="panel stack"><h2>'+ (state.stage==="board"?"Next round":"Live lineup")+'</h2>'+contents+
     '<div class="actions">'+btn("Final results","final","primary")+'</div></section>';
@@ -1465,7 +1464,9 @@ async function hostAction(action,button) {
   } else if (action==="lobby") {
     await transition({stage:"lobby",open:false});
   } else if (action==="start") {
-    await startRound(kind);
+    const confirmed=button.hasAttribute("data-confirm-short");
+    if (confirmed) shortRound="";
+    await startRound(kind,confirmed);
   } else if (action==="approveAll") {
     await approveAll();
   } else if (action==="status") {
@@ -1509,6 +1510,7 @@ async function actionClicked(event) {
   const action=button.dataset.action, id=button.dataset.id;
   if (action==="hostTab") {
     hostTab=id;
+    shortRound="";
     render();
     return;
   }
@@ -1520,6 +1522,7 @@ async function actionClicked(event) {
   }
   if (action==="edit") {editId=editId===id?"":id;render();return;}
   if (action==="cancelClear") {clearAsk=false;render();return;}
+  if (action==="cancelShort") {shortRound="";render();return;}
   if (action==="retryName") {joinCollision="";render();app.querySelector('[name="name"]')?.focus();return;}
   if (action==="confirmName") {confirmedIdentity=true;render();return;}
   if (action==="shuffle") {
